@@ -5,7 +5,7 @@ Continuously recognize ASL signs using webcam with MediaPipe landmark extraction
 
 Controls:
 - Press 'R' to reset buffer
-- Press 'Q' to quit
+- Press 'Q' to quit..
 """
 
 import cv2
