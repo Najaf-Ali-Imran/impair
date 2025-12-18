@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QSize, QTimer
 from PyQt6.QtGui import QPixmap, QFont, QColor, QIcon
 from styles import COLORS, RADIUS
+from detection_engine import DetectionEngine
 
 
 class TranslatorScreen(QWidget):
@@ -19,6 +20,17 @@ class TranslatorScreen(QWidget):
         self.current_mode = "Phrase"
         self.is_recording = False
         self.elapsed_time = 0
+        self.debug_mode = False
+        self.detected_text = ""
+        self.last_prediction = ""
+        self.last_prediction_time = 0
+        
+        # Initialize detection engine
+        self.detection_engine = DetectionEngine()
+        self.detection_engine.frame_ready.connect(self.update_video_frame)
+        self.detection_engine.prediction_ready.connect(self.update_prediction)
+        self.detection_engine.hand_detected.connect(self.update_hand_indicator)
+        
         self.setup_ui()
         self.setup_timer()
     
@@ -106,6 +118,30 @@ class TranslatorScreen(QWidget):
         """)
         self.add_icon_to_button(history_btn, "assets/history_icon.png")
         right_buttons.addWidget(history_btn)
+        
+        # Debug mode toggle button
+        self.debug_btn = QPushButton("Debug")
+        self.debug_btn.setFont(QFont("Segoe UI", 11))
+        self.debug_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.debug_btn.setCheckable(True)
+        self.debug_btn.clicked.connect(self.toggle_debug_mode)
+        self.debug_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {COLORS['surface_light']};
+                color: {COLORS['text']};
+                border: 1px solid {COLORS['border']};
+                border-radius: {RADIUS['medium']}px;
+                padding: 8px 20px;
+            }}
+            QPushButton:hover {{
+                background-color: {COLORS['border']};
+            }}
+            QPushButton:checked {{
+                background-color: {COLORS['primary']};
+                border-color: {COLORS['primary']};
+            }}
+        """)
+        right_buttons.addWidget(self.debug_btn)
         
         # Fullscreen button
         self.fullscreen_btn = QPushButton("⛶")
@@ -207,6 +243,18 @@ class TranslatorScreen(QWidget):
         for btn, btn_mode in self.mode_buttons:
             btn.setChecked(btn_mode == mode)
             self.update_mode_button_style(btn, btn_mode == mode)
+        
+        # Map UI modes to engine modes
+        mode_mapping = {
+            "Letters": "letters",
+            "Phrase": "words5",
+            "Full Sentences": "words80"
+        }
+        engine_mode = mode_mapping.get(mode, "letters")
+        self.detection_engine.set_mode(engine_mode)
+        self.detected_text = ""  # Reset accumulated text when switching modes
+        self.last_prediction = ""
+        self.last_prediction_time = 0
     
     def create_video_section(self):
         video_container = QWidget()
@@ -251,49 +299,45 @@ class TranslatorScreen(QWidget):
         top_bar.addStretch()
         video_inner_layout.addLayout(top_bar)
         
-        # Center - Camera placeholder
+        # Center - Video display
         video_inner_layout.addStretch()
         
-        self.camera_placeholder = QLabel()
-        self.camera_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.camera_placeholder.setStyleSheet(f"color: {COLORS['text_muted']}; background: transparent; border: none;")
+        self.video_label = QLabel()
+        self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.video_label.setStyleSheet(f"color: {COLORS['text_muted']}; background: transparent; border: none;")
+        self.video_label.setMinimumSize(640, 480)
         pixmap = QPixmap("assets/no_camera.png")
         if not pixmap.isNull():
-            self.camera_placeholder.setPixmap(pixmap.scaled(
+            self.video_label.setPixmap(pixmap.scaled(
                 80, 80,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation
             ))
         else:
-            self.camera_placeholder.setText("Camera Feed")
-            self.camera_placeholder.setFont(QFont("Segoe UI", 14))
-        video_inner_layout.addWidget(self.camera_placeholder)
+            self.video_label.setText("Camera Feed")
+            self.video_label.setFont(QFont("Segoe UI", 14))
+        video_inner_layout.addWidget(self.video_label)
         
         video_inner_layout.addStretch()
         
         # Bottom controls
         bottom_bar = QHBoxLayout()
         
-        # Left controls (mute, camera)
+        # Left controls - Hand detection indicator
         left_controls = QHBoxLayout()
         left_controls.setSpacing(10)
         
-        for icon_name in ["no_hand.png", "hand_detected.png"]:
-            ctrl_btn = QPushButton()
-            ctrl_btn.setFixedSize(44, 44)
-            ctrl_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            ctrl_btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: rgba(0, 0, 0, 0.6);
-                    border: none;
-                    border-radius: 22px;
-                }}
-                QPushButton:hover {{
-                    background-color: rgba(0, 0, 0, 0.8);
-                }}
-            """)
-            self.set_button_icon(ctrl_btn, f"assets/{icon_name}", 20)
-            left_controls.addWidget(ctrl_btn)
+        self.hand_indicator = QPushButton()
+        self.hand_indicator.setFixedSize(44, 44)
+        self.hand_indicator.setStyleSheet(f"""
+            QPushButton {{
+                background-color: rgba(0, 0, 0, 0.6);
+                border: none;
+                border-radius: 22px;
+            }}
+        """)
+        self.set_button_icon(self.hand_indicator, "assets/no_hand.png", 20)
+        left_controls.addWidget(self.hand_indicator)
         
         bottom_bar.addLayout(left_controls)
         bottom_bar.addStretch()
@@ -354,18 +398,34 @@ class TranslatorScreen(QWidget):
     
     def update_record_button(self):
         if self.is_recording:
-            self.record_btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: {COLORS['primary']};
-                    border: none;
-                    border-radius: 28px;
-                }}
-                QPushButton:hover {{
-                    background-color: {COLORS['primary_hover']};
-                }}
-            """)
-            self.record_btn.setText("■")
-            self.record_btn.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
+            icon = QIcon("assets/record_on.png")
+            if not icon.isNull():
+                self.record_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: transparent;
+                        border: none;
+                        border-radius: 28px;
+                    }}
+                    QPushButton:hover {{
+                        background-color: rgba(255, 255, 255, 0.05);
+                    }}
+                """)
+                self.record_btn.setIcon(icon)
+                self.record_btn.setIconSize(QSize(56, 56))
+                self.record_btn.setText("")
+            else:
+                self.record_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: {COLORS['primary']};
+                        border: none;
+                        border-radius: 28px;
+                    }}
+                    QPushButton:hover {{
+                        background-color: {COLORS['primary_hover']};
+                    }}
+                """)
+                self.record_btn.setText("■")
+                self.record_btn.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
         else:
             icon = QIcon("assets/rec-button.png")
             if not icon.isNull():
@@ -402,8 +462,11 @@ class TranslatorScreen(QWidget):
         if self.is_recording:
             self.elapsed_time = 0
             self.recording_timer.start(1000)
+            self.detected_text = ""
+            self.detection_engine.start_detection()
         else:
             self.recording_timer.stop()
+            self.detection_engine.stop_detection()
     
     def setup_timer(self):
         self.recording_timer = QTimer(self)
@@ -497,18 +560,29 @@ class TranslatorScreen(QWidget):
         prev_text.setWordWrap(True)
         content_layout.addWidget(prev_text)
         
-        # Current translation
-        current_text = QLabel("I am looking for the")
-        current_text.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))
-        current_text.setStyleSheet(f"color: {COLORS['text']};")
-        current_text.setWordWrap(True)
-        content_layout.addWidget(current_text)
-        
-        # Highlighted word (green)
-        highlight_text = QLabel("train station")
-        highlight_text.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))
-        highlight_text.setStyleSheet(f"color: {COLORS['success']};")
-        content_layout.addWidget(highlight_text)
+        # Current translation (main output) - Scrollable
+        from PyQt6.QtWidgets import QTextEdit
+        self.translation_text = QTextEdit()
+        self.translation_text.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
+        self.translation_text.setStyleSheet(f"""
+            QTextEdit {{
+                color: {COLORS['success']};
+                background: transparent;
+                border: none;
+            }}
+            QScrollBar:vertical {{
+                width: 8px;
+                background: {COLORS['surface_light']};
+                border-radius: 4px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {COLORS['primary']};
+                border-radius: 4px;
+            }}
+        """)
+        self.translation_text.setReadOnly(True)
+        self.translation_text.setMinimumHeight(100)
+        content_layout.addWidget(self.translation_text)
         
         # Cursor blink
         cursor = QLabel("▌")
@@ -531,17 +605,17 @@ class TranslatorScreen(QWidget):
         conf_layout.setContentsMargins(15, 12, 15, 12)
         conf_layout.setSpacing(8)
         
-        conf_label = QLabel("CONFIDENCE: 94%")
-        conf_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-        conf_label.setStyleSheet(f"color: {COLORS['text_muted']}; background: transparent;border: none;")
-        conf_layout.addWidget(conf_label)
+        self.conf_label = QLabel("CONFIDENCE: 0%")
+        self.conf_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        self.conf_label.setStyleSheet(f"color: {COLORS['text_muted']}; background: transparent;border: none;")
+        conf_layout.addWidget(self.conf_label)
         
         # Progress bar
-        progress = QProgressBar()
-        progress.setValue(94)
-        progress.setTextVisible(False)
-        progress.setFixedHeight(6)
-        progress.setStyleSheet(f"""
+        self.conf_progress = QProgressBar()
+        self.conf_progress.setValue(0)
+        self.conf_progress.setTextVisible(False)
+        self.conf_progress.setFixedHeight(6)
+        self.conf_progress.setStyleSheet(f"""
             QProgressBar {{
                 background-color: {COLORS['surface_light']};
                 border: none;
@@ -552,7 +626,7 @@ class TranslatorScreen(QWidget):
                 border-radius: 3px;
             }}
         """)
-        conf_layout.addWidget(progress)
+        conf_layout.addWidget(self.conf_progress)
         
         layout.addWidget(confidence_frame)
         
@@ -566,6 +640,7 @@ class TranslatorScreen(QWidget):
         clear_btn = QPushButton("  Clear")
         clear_btn.setFont(QFont("Segoe UI", 12))
         clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        clear_btn.clicked.connect(self.clear_translation)
         clear_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {COLORS['surface_light']};
@@ -700,3 +775,89 @@ class TranslatorScreen(QWidget):
         else:
             window.showFullScreen()
             self.fullscreen_btn.setText("⛶")
+    
+    def update_video_frame(self, qimage):
+        """Update video display with new frame from detection engine"""
+        pixmap = QPixmap.fromImage(qimage)
+        scaled_pixmap = pixmap.scaled(
+            self.video_label.size(),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation
+        )
+        self.video_label.setPixmap(scaled_pixmap)
+    
+    def update_prediction(self, text, confidence):
+        """Update translation output with new prediction"""
+        import time
+        current_time = time.time()
+        
+        if text and text.strip():
+            # Check if same as last prediction and within 5 seconds
+            if text == self.last_prediction and (current_time - self.last_prediction_time) < 5.0:
+                # Update confidence only, don't add text again
+                conf_percent = int(confidence * 100)
+                self.conf_label.setText(f"CONFIDENCE: {conf_percent}%")
+                self.conf_progress.setValue(conf_percent)
+                return
+            
+            # Different prediction or 5+ seconds passed
+            self.last_prediction = text
+            self.last_prediction_time = current_time
+            
+            # For letters mode, just add the letter
+            if self.current_mode == "Letters":
+                if text not in ["nothing", ""]:
+                    self.detected_text += text
+            else:
+                # For words/sentences, add on new line
+                if text not in ["nothing", ""]:
+                    if self.detected_text:
+                        self.detected_text += "\n"
+                    self.detected_text += text
+            
+            # Update the translation text
+            self.translation_text.setPlainText(self.detected_text)
+            
+            # Auto-scroll to bottom
+            scrollbar = self.translation_text.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
+            
+            # Update confidence display
+            conf_percent = int(confidence * 100)
+            self.conf_label.setText(f"CONFIDENCE: {conf_percent}%")
+            self.conf_progress.setValue(conf_percent)
+    
+    def toggle_debug_mode(self):
+        """Toggle debug mode for landmark visualization"""
+        self.debug_mode = self.debug_btn.isChecked()
+        self.detection_engine.set_debug_mode(self.debug_mode)
+    
+    def update_hand_indicator(self, detected):
+        """Update hand detection indicator"""
+        if detected:
+            self.set_button_icon(self.hand_indicator, "assets/hand_detected.png", 20)
+            self.hand_indicator.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: rgba(0, 255, 0, 0.3);
+                    border: 2px solid rgba(0, 255, 0, 0.8);
+                    border-radius: 22px;
+                }}
+            """)
+        else:
+            self.set_button_icon(self.hand_indicator, "assets/no_hand.png", 20)
+            self.hand_indicator.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: rgba(255, 0, 0, 0.3);
+                    border: 2px solid rgba(255, 0, 0, 0.8);
+                    border-radius: 22px;
+                }}
+            """)
+    
+    def clear_translation(self):
+        """Clear the translation output"""
+        self.detected_text = ""
+        self.last_prediction = ""
+        self.last_prediction_time = 0
+        self.translation_text.setPlainText("")
+        self.conf_label.setText("CONFIDENCE: 0%")
+        self.conf_progress.setValue(0)
