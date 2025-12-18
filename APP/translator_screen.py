@@ -23,7 +23,6 @@ class TranslatorScreen(QWidget):
         self.debug_mode = False
         self.detected_text = ""
         self.last_prediction = ""
-        self.last_prediction_time = 0
         
         # Initialize detection engine
         self.detection_engine = DetectionEngine()
@@ -788,21 +787,17 @@ class TranslatorScreen(QWidget):
     
     def update_prediction(self, text, confidence):
         """Update translation output with new prediction"""
-        import time
-        current_time = time.time()
-        
         if text and text.strip():
-            # Check if same as last prediction and within 5 seconds
-            if text == self.last_prediction and (current_time - self.last_prediction_time) < 5.0:
+            # Prevent repeating the same word consecutively (no loop)
+            if text == self.last_prediction:
                 # Update confidence only, don't add text again
                 conf_percent = int(confidence * 100)
                 self.conf_label.setText(f"CONFIDENCE: {conf_percent}%")
                 self.conf_progress.setValue(conf_percent)
                 return
             
-            # Different prediction or 5+ seconds passed
+            # New prediction - update and add to text
             self.last_prediction = text
-            self.last_prediction_time = current_time
             
             # For letters mode, just add the letter
             if self.current_mode == "Letters":
@@ -857,7 +852,6 @@ class TranslatorScreen(QWidget):
         """Clear the translation output"""
         self.detected_text = ""
         self.last_prediction = ""
-        self.last_prediction_time = 0
         self.translation_text.setPlainText("")
         self.conf_label.setText("CONFIDENCE: 0%")
         self.conf_progress.setValue(0)
