@@ -82,6 +82,12 @@ class DetectionEngine(QThread):
             self.nose_indices = [1, 2, 98, 327]
             self.ears_indices = [33, 263]
             
+            # P3 constants from ASL_P3_80/main.py
+            self.max_frames_p3 = 64
+            self.num_landmarks_p3 = 121
+            self.num_dimensions_p3 = 3
+            self.input_size_p3 = self.num_landmarks_p3 * self.num_dimensions_p3  # 363
+            
             print(f"✅ Phase 3 (80 Words) model loaded - {len(self.classes_p3)} classes")
             
         except Exception as e:
@@ -122,7 +128,9 @@ class DetectionEngine(QThread):
             else:  # words80
                 self.holistic = self.mp_holistic.Holistic(
                     min_detection_confidence=0.5,
-                    min_tracking_confidence=0.5
+                    min_tracking_confidence=0.5,
+                    model_complexity=1,
+                    refine_face_landmarks=True  # CRITICAL: Enable full face mesh for lips/nose/ears
                 )
                 print(f"✅ MediaPipe Holistic reinitialized for {mode}")
         
@@ -164,7 +172,9 @@ class DetectionEngine(QThread):
             else:  # words80
                 self.holistic = self.mp_holistic.Holistic(
                     min_detection_confidence=0.5,
-                    min_tracking_confidence=0.5
+                    min_tracking_confidence=0.5,
+                    model_complexity=1,
+                    refine_face_landmarks=True  # CRITICAL: Enable full face mesh for lips/nose/ears
                 )
                 print(f"✅ MediaPipe Holistic initialized for {self.current_mode}")
             
@@ -309,39 +319,98 @@ class DetectionEngine(QThread):
     
     # ==================== PHASE 3: 80 WORDS ====================
     def extract_keypoints_p3(self, results):
-        """Extract 363 features for Phase 3 (121 landmarks × 3)"""
+        """
+        Extract exactly 121 landmarks × 3 dimensions = 363 features.
+        EXACT COPY from ASL_P3_80/main.py
+        
+        Order (matching training data):
+        1. Lips (40 landmarks from face mesh)
+        2. Nose (4 landmarks from face mesh)
+        3. Ears (2 landmarks from face mesh)
+        4. Left Hand (21 landmarks)
+        5. Pose (33 landmarks - shoulders/arms)
+        6. Right Hand (21 landmarks)
+        
+        Returns: numpy array of shape (121, 3)
+        """
         landmarks = []
         
-        # Lips (40), Nose (4), Ears (2)
+        # 1. FACE LANDMARKS (Lips + Nose + Ears = 46 landmarks)
         if results.face_landmarks:
-            for idx in self.lips_indices + self.nose_indices + self.ears_indices:
-                lm = results.face_landmarks.landmark[idx]
-                landmarks.extend([lm.x, lm.y, lm.z])
+            face = results.face_landmarks.landmark
+            # Lips (40 landmarks)
+            for idx in self.lips_indices:
+                landmarks.append([face[idx].x, face[idx].y, face[idx].z])
+            # Nose (4 landmarks)
+            for idx in self.nose_indices:
+                landmarks.append([face[idx].x, face[idx].y, face[idx].z])
+            # Ears (2 landmarks)
+            for idx in self.ears_indices:
+                landmarks.append([face[idx].x, face[idx].y, face[idx].z])
         else:
-            landmarks.extend([0.0] * (46 * 3))
+            # Fill with zeros if face not detected (46 landmarks × 3)
+            landmarks.extend([[0.0, 0.0, 0.0]] * (len(self.lips_indices) + len(self.nose_indices) + len(self.ears_indices)))
         
-        # Left hand (21)
+        # 2. LEFT HAND (21 landmarks)
         if results.left_hand_landmarks:
             for lm in results.left_hand_landmarks.landmark:
-                landmarks.extend([lm.x, lm.y, lm.z])
+                landmarks.append([lm.x, lm.y, lm.z])
         else:
-            landmarks.extend([0.0] * (21 * 3))
+            # Fill with zeros if left hand not detected
+            landmarks.extend([[0.0, 0.0, 0.0]] * 21)
         
-        # Pose (33)
+        # 3. POSE (33 landmarks - full body pose for shoulders/arms)
         if results.pose_landmarks:
             for lm in results.pose_landmarks.landmark:
-                landmarks.extend([lm.x, lm.y, lm.z])
+                landmarks.append([lm.x, lm.y, lm.z])
         else:
-            landmarks.extend([0.0] * (33 * 3))
+            # Fill with zeros if pose not detected
+            landmarks.extend([[0.0, 0.0, 0.0]] * 33)
         
-        # Right hand (21)
+        # 4. RIGHT HAND (21 landmarks)
         if results.right_hand_landmarks:
             for lm in results.right_hand_landmarks.landmark:
-                landmarks.extend([lm.x, lm.y, lm.z])
+                landmarks.append([lm.x, lm.y, lm.z])
         else:
-            landmarks.extend([0.0] * (21 * 3))
+            # Fill with zeros if right hand not detected
+            landmarks.extend([[0.0, 0.0, 0.0]] * 21)
         
-        return np.array(landmarks)
+        return np.array(landmarks, dtype=np.float32)  # Shape: (121, 3)
+    
+    def preprocess_sequence_p3(self, sequence):
+        """
+        Preprocess the sequence of landmarks for model input.
+        EXACT COPY from ASL_P3_80/main.py
+        
+        Steps:
+        1. Stack sequence into array
+        2. Resize to exactly 64 frames (if needed)
+        3. Flatten landmarks: (64, 121, 3) -> (64, 363)
+        4. Normalize by subtracting 0.5
+        5. Add batch dimension: (1, 64, 363)
+        
+        Args:
+            sequence: List of numpy arrays, each of shape (121, 3)
+        
+        Returns:
+            numpy array of shape (1, 64, 363)
+        """
+        # Stack into array: (N, 121, 3)
+        data = np.array(sequence, dtype=np.float32)
+        
+        # Resize to 64 frames if needed
+        if len(data) != self.max_frames_p3:
+            data = tf.image.resize(data, (self.max_frames_p3, self.num_landmarks_p3), method='bilinear')
+            data = data.numpy()
+        
+        # Flatten the landmarks: (64, 121, 3) -> (64, 363)
+        data = data.reshape(self.max_frames_p3, self.input_size_p3)
+        
+        # Normalize: subtract 0.5
+        data = data - 0.5
+        
+        # Add batch dimension: (1, 64, 363)
+        return np.expand_dims(data, axis=0)
     
     def process_p3_words80(self, frame, rgb_frame):
         """Phase 3 - 80 Words Recognition"""
@@ -353,7 +422,11 @@ class DetectionEngine(QThread):
             return
         
         try:
+            # CRITICAL: Set writeable flag to False for MediaPipe optimization (from ASL_P3_80/main.py)
+            rgb_frame.flags.writeable = False
             results = self.holistic.process(rgb_frame)
+            # Set back to True after processing
+            rgb_frame.flags.writeable = True
         except Exception as e:
             print(f"❌ Error processing holistic: {e}")
             self.emit_frame(frame)
@@ -388,20 +461,28 @@ class DetectionEngine(QThread):
                 )
         
         # Extract keypoints and add to sequence
-        keypoints = self.extract_keypoints_p3(results)
+        keypoints = self.extract_keypoints_p3(results)  # Shape: (121, 3)
         self.sequence_p3.append(keypoints)
         
         # Predict when buffer is full
         if len(self.sequence_p3) == 64 and self.frame_count % self.prediction_interval_p3 == 0:
             if hands_detected:
-                input_data = np.expand_dims(list(self.sequence_p3), axis=0)
-                res = self.model_words80.predict(input_data, verbose=0)[0]
-                predicted_index = np.argmax(res)
-                confidence = float(res[predicted_index])
-                
-                if confidence > self.threshold_p3:
-                    predicted_word = self.classes_p3[predicted_index].capitalize()
-                    self.prediction_ready.emit(predicted_word, confidence)
+                try:
+                    # Preprocess sequence - EXACT SAME AS ASL_P3_80/main.py
+                    input_data = self.preprocess_sequence_p3(list(self.sequence_p3))
+                    
+                    # Run prediction
+                    res = self.model_words80.predict(input_data, verbose=0)[0]
+                    predicted_index = np.argmax(res)
+                    confidence = float(res[predicted_index])
+                    
+                    if confidence > self.threshold_p3:
+                        predicted_word = self.classes_p3[predicted_index].capitalize()
+                        self.prediction_ready.emit(predicted_word, confidence)
+                except Exception as e:
+                    print(f"⚠️ P3 Prediction error: {e}")
+                    import traceback
+                    traceback.print_exc()
         
         self.emit_frame(frame)
     
