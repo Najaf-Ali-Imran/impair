@@ -1,12 +1,4 @@
-"""
-ASL Real-Time Letter Recognition - Phase 1
-===========================================
-Recognize ASL letters using webcam with MediaPipe hand landmarks.
 
-Controls:
-- Press 'R' to reset/clear
-- Press 'Q' to quit
-"""
 
 import cv2
 import mediapipe as mp
@@ -14,11 +6,9 @@ import numpy as np
 import joblib
 import time
 
-# --- CONFIGURATION ---
 MODEL_PATH = 'asl_model.joblib'
 PREDICTION_INTERVAL = 5  # Predict every 5 frames to reduce lag
 
-# --- LOAD THE TRAINED MODEL ---
 print("="*60)
 print("ASL Real-Time Letter Recognition - Phase 1")
 print("="*60)
@@ -31,7 +21,6 @@ except FileNotFoundError:
     print("Please make sure the model file is in the same folder as this script.")
     exit()
 
-# Initialize MediaPipe Hands
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(
     static_image_mode=False,

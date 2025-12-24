@@ -1,6 +1,5 @@
 """
 IMPAIR - Main Translator Screen
-Matches the design screenshot exactly
 """
 
 from PyQt6.QtWidgets import (

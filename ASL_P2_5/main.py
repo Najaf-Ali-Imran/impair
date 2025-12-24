@@ -1,12 +1,4 @@
-"""
-ASL Real-Time Continuous Recognition - Phase 2
-===============================================
-Continuously recognize ASL signs (5 words) using webcam with MediaPipe hand landmarks.
 
-Controls:
-- Press 'R' to reset buffer
-- Press 'Q' to quit
-"""
 
 import cv2
 import numpy as np
@@ -15,12 +7,8 @@ import tensorflow as tf
 from collections import deque
 import time
 
-# --- CONFIGURATION ---
-# 1. Matches your file name exactly
 MODEL_PATH = 'my_lstm_model_phase2.h5' 
 
-# 2. Your specific classes (Alphabetical order is safest for verification)
-# Try this order first. If words are swapped, we just rearrange this list.
 ACTIONS = np.array(['goodbye', 'hello', 'me', 'thanks', 'you'])
 
 # 3. Model Parameters

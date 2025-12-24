@@ -1,20 +1,3 @@
-"""
-ASL Real-Time Sign Language Recognition (P3_80)
-================================================
-Real-time recognition using 1D CNN model with 121 landmarks × 3 dimensions (363 features).
-
-Model Requirements:
-- Input Shape: (1, 64, 363) -> (Batch Size, 64 Frames, 363 Features)
-- Features: 121 landmarks × 3 (x, y, z) = 363
-
-Files Required (place in same directory as this script):
-- asl_model.h5   : Trained Keras model
-- classes.npy   : Numpy array of class labels
-
-Controls:
-- Press 'R' to reset buffer
-- Press 'Q' to quit
-"""
 
 import cv2
 import mediapipe as mp
@@ -24,8 +7,6 @@ from collections import deque
 import time
 import os
 
-# ================= CONFIG =================
-# Place your model files in the same folder as this script
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(SCRIPT_DIR, 'asl_model.h5')
 CLASSES_PATH = os.path.join(SCRIPT_DIR, 'classes.npy')
@@ -38,8 +19,6 @@ INPUT_SIZE = NUM_LANDMARKS * NUM_DIMENSIONS  # 121 × 3 = 363 features
 PREDICTION_INTERVAL = 15     # Predict every N frames
 CONFIDENCE_THRESHOLD = 0.5   # Minimum confidence to display prediction
 
-# ================= LANDMARK INDICES =================
-# These indices match EXACTLY what was used during training
 
 # Face mesh landmarks for lips (40 landmarks)
 LIPS_INDICES = [61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291, 146, 91, 181, 84, 17, 
@@ -88,21 +67,8 @@ mp_holistic = mp.solutions.holistic
 mp_drawing = mp.solutions.drawing_utils
 mp_drawing_styles = mp.solutions.drawing_styles
 
-# ================= LANDMARK EXTRACTION =================
 def extract_landmarks(results):
-    """
-    Extract exactly 121 landmarks × 3 dimensions = 363 features.
-    
-    Order (matching training data):
-    1. Lips (40 landmarks from face mesh)
-    2. Nose (4 landmarks from face mesh)
-    3. Ears (2 landmarks from face mesh)
-    4. Left Hand (21 landmarks)
-    5. Pose (33 landmarks - shoulders/arms)
-    6. Right Hand (21 landmarks)
-    
-    Returns: numpy array of shape (121, 3)
-    """
+   
     landmarks = []
     
     # 1. FACE LANDMARKS (Lips + Nose + Ears = 46 landmarks)
@@ -149,29 +115,12 @@ def extract_landmarks(results):
 
 
 def preprocess_sequence(sequence):
-    """
-    Preprocess the sequence of landmarks for model input.
-    
-    Steps:
-    1. Stack sequence into array
-    2. Resize to exactly 64 frames (if needed)
-    3. Flatten landmarks: (64, 121, 3) -> (64, 363)
-    4. Normalize by subtracting 0.5
-    5. Add batch dimension: (1, 64, 363)
-    
-    Args:
-        sequence: List of numpy arrays, each of shape (121, 3)
-    
-    Returns:
-        numpy array of shape (1, 64, 363)
-    """
-    # Stack into array: (N, 121, 3)
+   
     data = np.array(sequence, dtype=np.float32)
     
     # Resize to 64 frames if needed
     if len(data) != MAX_FRAMES:
         # Reshape for tf.image.resize: (N, 121, 3) -> needs to be (N, H, W) or use resize
-        # We'll use interpolation along the time axis
         data = tf.image.resize(data, (MAX_FRAMES, NUM_LANDMARKS), method='bilinear')
         data = data.numpy()
     
@@ -185,7 +134,6 @@ def preprocess_sequence(sequence):
     return np.expand_dims(data, axis=0)
 
 
-# ================= UI DRAWING FUNCTIONS =================
 def draw_progress_bar(frame, x, y, width, height, progress, color_bg, color_fill, label=""):
     """Draw a progress bar on the frame."""
     # Background
@@ -203,7 +151,6 @@ def draw_progress_bar(frame, x, y, width, height, progress, color_bg, color_fill
 
 
 def draw_confidence_bar(frame, x, y, width, height, confidence, label):
-    """Draw a confidence bar with color gradient based on confidence level."""
     # Determine color based on confidence
     if confidence >= 0.8:
         color = (0, 255, 0)      # Green - High confidence
@@ -226,17 +173,7 @@ def draw_confidence_bar(frame, x, y, width, height, confidence, label):
 
 
 def draw_ui(frame, sequence, hands_detected, fps, prediction_word, confidence, top_5_predictions):
-    """
-    Draw complete UI overlay on the frame.
     
-    Includes:
-    - Info panel (left side)
-    - Recording progress bar
-    - Prediction result
-    - Confidence bar
-    - Top 5 predictions (right side)
-    - Controls help (bottom)
-    """
     h, w = frame.shape[:2]
     
     # ===== LEFT PANEL: Info & Status =====
@@ -361,7 +298,6 @@ def draw_ui(frame, sequence, hands_detected, fps, prediction_word, confidence, t
 def draw_landmarks_on_frame(image, results):
     """Draw MediaPipe landmarks on the frame with skeleton style."""
     
-    # Draw face mesh (only lips region for cleaner visualization)
     if results.face_landmarks:
         # Draw face mesh connections (simplified) - use face_mesh module for FACEMESH_LIPS
         mp_drawing.draw_landmarks(
