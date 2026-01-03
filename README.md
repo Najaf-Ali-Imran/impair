@@ -38,24 +38,24 @@
 
 ## 🎯 Problem Statement
 
-Communication barriers between the deaf and hearing communities remain a significant challenge worldwide. **Over 70 million deaf people** globally rely on sign language as their primary mode of communication, yet most of the general population cannot understand sign language.
+The motivation behind IMPAIR is to reduce everyday communication barriers faced by the **deaf and hard-of-hearing community**. Many individuals rely on American Sign Language (ASL) as their primary mode of communication, yet most people around them do not understand it.
 
 ### The Challenge
 
-- ❌ **Limited Accessibility**: Deaf individuals often face difficulties communicating with non-signers in daily situations
-- ❌ **Professional Interpreter Shortage**: Qualified sign language interpreters are scarce and expensive
-- ❌ **Real-time Communication Gap**: Existing solutions often have significant latency or accuracy issues
-- ❌ **Technology Gap**: Most available tools focus only on static letter recognition, ignoring dynamic word gestures
+- ❌ **Communication Barriers**: Deaf individuals face daily difficulties interacting with non-signers
+- ❌ **Limited Vocabulary Tools**: Most existing solutions focus only on static letter recognition
+- ❌ **Real-time Performance Issues**: Many systems have latency that disrupts natural conversation
+- ❌ **Privacy Concerns**: Traditional video-based systems raise privacy issues
 
 ### Our Solution
 
-**IMPAIR** addresses these challenges by providing:
+**IMPAIR** provides a practical tool that converts ASL gestures into text in real time, enabling clearer interaction in daily situations:
 
 - ✅ **Three-tier Recognition System**: Letters, Basic Phrases (5 words), and Extended Vocabulary (80 words)
-- ✅ **Real-time Processing**: Live webcam feed with instant translation
-- ✅ **No Special Hardware Required**: Works with any standard webcam
+- ✅ **Real-time Performance**: Prioritized for smooth and natural communication (~30 FPS)
+- ✅ **Privacy-Focused**: Processes skeletal landmark data instead of raw video
+- ✅ **Expanded Vocabulary**: Beyond basic gestures to support meaningful conversations
 - ✅ **User-Friendly Interface**: Modern, intuitive PyQt6 desktop application
-- ✅ **High Accuracy**: Multiple optimized ML models for different recognition tasks
 
 ---
 
@@ -89,7 +89,7 @@ Joblib         - Model serialization
 |:-----:|:----------:|:--------:|:-----------:|
 | **Phase 1** | Random Forest Classifier | 42 hand landmarks (x,y) | 26 ASL Letters |
 | **Phase 2** | LSTM Neural Network | 126 features (2 hands × 63) | 5 Common Words |
-| **Phase 3** | LSTM Neural Network | 363 features (121 landmarks × 3) | 80 Words |
+| **Phase 3** | 1D CNN | 363 features (121 landmarks × 3) | 80 ASL Signs |
 
 ### Development Tools
 
@@ -177,7 +177,7 @@ python main.py
 2. **Select Mode**: Choose from three recognition modes:
    - 🔤 **Letters** - Recognize individual ASL alphabet letters
    - 💬 **Phrase** - Recognize 5 common words (hello, goodbye, thanks, you, me)
-   - 📝 **Full Sentences** - Recognize 80+ different signs
+   - 📝 **Full Sentences** - Recognize 80 different ASL signs
 3. **Start Recording**: Click the record button to begin translation
 4. **Position Yourself**: Ensure good lighting and position your hands clearly in frame
 5. **View Translation**: See real-time translations with confidence scores
@@ -208,21 +208,21 @@ python main.py
 
 | Dataset | Source | Description |
 |:-------:|:------:|:-----------:|
-| **ASL Hand Keypoints** | [Google Drive](https://drive.google.com/uc?id=10gaNXaGy25fZMiRUlHILw5Kzi0g0Tw0Z) | Pre-extracted 2D hand landmark coordinates for 26 ASL letters |
+| **ASL Hand Keypoints** | [Google Drive](https://drive.google.com/drive/folders/1h_B4DDVMLbWjlwhAt0mL0owfdDbelf9e) | Pre-extracted 2D hand landmark coordinates for 26 ASL letters |
 
 ### Phase 2: Word Recognition (5 Words)
 
 | Dataset | Source | Description |
 |:-------:|:------:|:-----------:|
-| **Custom Dataset** | Self-collected | Video sequences for: `hello`, `goodbye`, `thanks`, `you`, `me` |
+| **MediaPipe Hand Landmarks** | [Kaggle Dataset](https://www.kaggle.com/datasets/kafkanguy/mediapipe-hand-landmarks-datasets) | MediaPipe hand landmark sequences for word recognition |
 | **Format** | MediaPipe Keypoints | 40 frames × 126 features per sequence |
 
 ### Phase 3: Extended Vocabulary (80 Words)
 
 | Dataset | Source | Description |
 |:-------:|:------:|:-----------:|
-| **Google ASL Dataset** | [Kaggle - ASL Signs](https://www.kaggle.com/competitions/asl-signs/data) | Comprehensive dataset with 80 ASL sign classes |
-| **Features** | 121 Landmarks × 3D | Face (lips, nose, ears), hands, and pose landmarks |
+| **ASL 80 Google SLR** | [Kaggle Dataset](https://www.kaggle.com/datasets/najaf456ali/asl-100-google-slr) | Large-scale dataset with 80 ASL sign classes (31,724 video clips) |
+| **Features** | 121 Landmarks × 3D | Face (lips, nose, ears), hands, and pose landmarks (64 frames/sequence) |
 
 ---
 
@@ -288,11 +288,15 @@ Recognizes 5 commonly used ASL words using an LSTM neural network that processes
 ### 📝 Full Sentences Mode (Phase 3)
 Extended vocabulary recognition supporting 80 different ASL signs for more complex communication.
 
-**Features**: Uses holistic body tracking including facial landmarks (lips, nose, ears), body pose, and both hands for comprehensive sign recognition.
+**Features**: Uses 1D CNN with holistic body tracking including facial landmarks (lips, nose, ears), body pose, and both hands. Operates at ~30 FPS for real-time performance.
 
 ---
 
 ## 🖼️ Screenshots
+
+<p align="center">
+  <img src="APP/assets/demo.png" alt="IMPAIR Demo" width="800"/>
+</p>
 
 <p align="center">
   <em>Main Translation Interface</em>
@@ -304,11 +308,11 @@ Extended vocabulary recognition supporting 80 different ASL signs for more compl
 
 ## 📈 Model Performance
 
-| Phase | Model | Accuracy | Inference Speed |
-|:-----:|:-----:|:--------:|:---------------:|
-| Phase 1 | Random Forest | ~95% | ~5 FPS |
-| Phase 2 | LSTM | ~80%+ | ~10 FPS |
-| Phase 3 | LSTM | ~50%+ | ~15 FPS |
+| Phase | Model | Training Accuracy | Validation Accuracy | Inference Speed |
+|:-----:|:-----:|:--------:|:--------:|:---------------:|
+| Phase 1 | Random Forest | ~95% | ~95% | Real-time |
+| Phase 2 | LSTM | ~90%+ | ~85%+ | Real-time |
+| Phase 3 | 1D CNN | 93.9% | 82.2% | ~30 FPS |
 
 ---
 
